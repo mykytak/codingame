@@ -61,7 +61,6 @@ class Sample(ComparableMixin):
     self.cost_e = int(cost_e)
 
     self.cost_total = self.cost_a + self.cost_b + self.cost_c + self.cost_d + self.cost_e
-    self.cost_counter = (-1) * self.cost_total
 
     self.unknown = self.health == -1
 
@@ -119,11 +118,11 @@ class Sample(ComparableMixin):
 
 
   def missing(self):
-    return max(self.cost_a, self.cost_a - ctrl.amount('ma') - ctrl.expertise['a']) \
-         + max(self.cost_b, self.cost_b - ctrl.amount('mb') - ctrl.expertise['b']) \
-         + max(self.cost_c, self.cost_c - ctrl.amount('mc') - ctrl.expertise['c']) \
-         + max(self.cost_d, self.cost_d - ctrl.amount('md') - ctrl.expertise['d']) \
-         + max(self.cost_e, self.cost_e - ctrl.amount('me') - ctrl.expertise['e'])
+    return max(0, self.cost_a - ctrl.amount('ma') - ctrl.expertise['a']) \
+         + max(0, self.cost_b - ctrl.amount('mb') - ctrl.expertise['b']) \
+         + max(0, self.cost_c - ctrl.amount('mc') - ctrl.expertise['c']) \
+         + max(0, self.cost_d - ctrl.amount('md') - ctrl.expertise['d']) \
+         + max(0, self.cost_e - ctrl.amount('me') - ctrl.expertise['e'])
 
 
   def complete(self):
@@ -157,7 +156,7 @@ class Sample(ComparableMixin):
 
 
   def cost(self):
-    return self.cost_total + self.cost_counter
+    return self.cost_total
 
 
   def enough(self):
@@ -201,8 +200,6 @@ class Sample(ComparableMixin):
                ctrl.expertise['e'] if self.cost_e > 0 else 0])
 
   def _cmpkey(self):
-    # return (self.health, self.cost_counter)
-    # return (self.cost_counter, self.health)
     return self._worthiness
 
   def __getitem__(self, key):
@@ -448,8 +445,6 @@ class Molecules():
       self.key += 1
       self.action()
       return
-
-    sample.cost_counter += 1
 
     if ctrl.focus_id == sample.id:
       ctrl.decAmount('saved')
