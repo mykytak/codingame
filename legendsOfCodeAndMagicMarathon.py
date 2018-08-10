@@ -81,8 +81,20 @@ class Field(Deck):
   def getActions(self):
     res = ''
 
+    guards = [c for c in he.field.cards if 'G' in c.abilities]
+
     for card in self.cards:
-      res += 'ATTACK ' + str(card.id) + ' -1;'
+      res += 'ATTACK ' + str(card.id)
+
+      if guards != []:
+        g = guards[-1]
+        res += ' ' + str(g.id) + '; '
+        g.defense -= card.attack
+        if g.defense <= 0:
+          guards.pop()
+
+      else:
+        res += ' -1;'
 
     return res
 
