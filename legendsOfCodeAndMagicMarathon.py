@@ -19,7 +19,7 @@ class Const:
 
 class Player:
   def __init__(self):
-    self.hp = 0
+    self.health = 0
     self.mana = 0
     self.deck = 0
     self.rune = 0
@@ -29,20 +29,22 @@ class Player:
 
 
   def parseInput(self):
-    self.hp, self.mana, self.deck, self.rune = [int(j) for j in input().split()]
+    self.health, self.mana, self.deck, self.rune = [int(j) for j in input().split()]
     self.hand = Hand()
     self.field = Field()
 
 
   def action(self):
     self.hand.cards.sort(key=lambda card: card.value)
-    self.field.cards.sort(key=lambda card: card.value)
-    he.field.cards.sort(key=lambda card: card.value)
+
+    self.field.prepare()
+    he.field.prepare()
 
     actions = ''
 
     actions += self.hand.getActions()
-    actions += self.field.getActions()
+    actions += self.field.cleanBoard()
+    actions += self.field.attackPlayer()
 
     if actions == '':
       actions = 'PASS'
@@ -111,28 +113,78 @@ class Field(Deck):
     self.cards = []
 
 
-  def getActions(self):
-    res = ''
+  def hit(self, enemy):
+    actions = ''
+    while self.cards != []:
+      self.cards.sort(key=lambda card: card.killingPower(enemy))
+      attacker = self.cards.pop(0)
+      if attacker.attack == 0:
+        continue
+      actions += 'ATTACK %s %s; ' % (attacker.id, enemy.id)
+      attacker.hit(enemy)
+      self.offense -= attacker.attack
 
+      if enemy.defense <= 0:
+        break
+    else:
+      he.field.cards.remove(enemy)
+      he.field.offense -= enemy.attack
+
+    return actions
+
+    # if enemy.defense <= 0:
+    #   he.field.cards.remove(enemy)
+    #   he.field.offense -= enemy.attack
+
+
+  def cleanBoard(self):
+    actions = ''
     guards = [c for c in he.field.cards if 'G' in c.abilities]
+
+    if guards == [] and self.offense > he.field.defense:
+      return actions
+
+    if guards != []:
+      for g in guards:
+        actions += self.hit(g)
+
+    if self.offense >= he.health or he.field.cards == []:
+      return actions
+
+    targets = iter(he.field.cards)
+    while self.offense <= he.field.offense or he.field.cards != []:
+      try:
+        target = next(targets)
+      except StopIteration:
+        break
+      actions += self.hit(target)
+
+    return actions
+
+
+  def attackPlayer(self):
+    res = ''
 
     for card in self.cards:
       if card.attack == 0:
         continue
 
-      res += 'ATTACK ' + str(card.id)
-
-      if guards != []:
-        g = guards[-1]
-        res += ' ' + str(g.id) + '; '
-        g.defense -= card.attack
-        if g.defense <= 0:
-          guards.pop()
-
-      else:
-        res += ' -1;'
+      res += 'ATTACK %s -1;' % (card.id)
 
     return res
+
+
+  def prepare(self, enemy=False):
+    func = lambda card: card.value if not enemy else \
+           lambda card: card.treat
+    self.cards.sort(key=func)
+
+    self.offense = 0
+    self.defense = 0
+
+    for card in self.cards:
+      self.offense += card.attack
+      self.defense += card.defense
 
 
 
@@ -149,6 +201,14 @@ class Card:
     self.attack = int(attack)
     self.defense = int(defense)
     self.abilities = abilities
+
+    self.B = 'B' in abilities
+    self.C = 'C' in abilities
+    self.G = 'G' in abilities
+    self.D = 'D' in abilities
+    self.L = 'L' in abilities
+    self.W = 'W' in abilities
+
     self.myHealthChange = int(my_health_change)
     self.opponentHealthChange = int(opponent_health_change)
     self.draw = int(card_draw)
@@ -175,8 +235,10 @@ class Card:
 
     if self.type == Const.CREATURE:
       self.value = (self.attack + 1 + sum([2 for x in abilities if x in ['B','C','D']])) / (self.cost + 1) \
-                 + (self.defense + 1 + (4 if 'G' in abilities else 0)) / (self.cost + 1) \
+                 + (self.defense + 1 + (4 if self.G else 0)) / (self.cost + 1) \
                  + sum([2 for x in abilities if x in ['L', 'W']]) / 2
+
+      self.treat = self.attack + (self.attack - self.defense) + sum([2 for x in abilities if x in ['B', 'D']]) + (10 if self.L else 0)
 
       # self.attack * (2 if 'B' in attributes else 1) - self.cost \
       #            + self.defense - self.cost \
@@ -191,6 +253,35 @@ class Card:
     #                + (1 if 'D' in abilities else 0) \
     #                + (1 if 'L' in abilities else 0) \
     #                + (1 if 'W' in abilities else 0)
+
+
+  def killingPower(self, enemy):
+    if self.attack == 0:
+      return -99
+
+    if self.L and not enemy.W:
+      return 99
+
+    if enemy.W:
+      return -self.attack - self.defense
+
+    if enemy.L:
+      return -math.pow(self.attack - enemy.defense, 2)
+
+    return -math.pow(self.attack - enemy.defense, 2)
+
+
+  def hit(self, enemy):
+    if self.L and not enemy.W:
+      enemy.defense = 0
+      return
+
+    if enemy.W:
+      enemy.W = False
+      return
+
+    enemy.defense -= self.attack
+
 
 
 
