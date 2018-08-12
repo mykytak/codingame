@@ -219,6 +219,9 @@ class Card:
     self.opponentHealthChange = int(opponent_health_change)
     self.draw = int(card_draw)
 
+    self.draftValue = 0
+    self.threat = 0
+
     """
 
     B, C, D - attack
@@ -296,7 +299,7 @@ class Card:
     enemy.defense -= self.attack
 
   def __repr__(self):
-    return "%s: %s/%s %s w%s t%s" % (self.id, self.attack, self.defense, self.abilities, self.value, self.threat)
+    return "%s: %s/%s %s v%.3f t%s; dw:%.3f\n" % (self.id, self.attack, self.defense, self.abilities, self.value, self.threat, self.draftValue)
 
 
 
@@ -308,26 +311,36 @@ class Draft:
     self.mid  = 0
     self.high = 0
 
-    self.targetLow  = 9
-    self.targetMid  = 11
-    self.targetHigh = 10
+    self.left = 30
+
+    self.targetLow  = 3
+    self.targetMid  = 1
+    self.targetHigh = 6
 
   def parse(self):
+    self.cards = []
     for i in range(3):
       card = Card()
       card.place = i
       self.cards.append(card)
 
   def choose(self):
-    self.cards.sort(key=lambda card: card.value + \
-                    (self.targetLow - self.low if card.cost in [0,1,2] else \
-                    (self.targetMid - self.mid if card.cost in [3,4,5] else \
-                     self.targetHigh - self.high )), reverse=True)
+    for card in self.cards:
+      card.draftValue = card.value + \
+                        max(((self.targetLow - self.low) * self.left / 10 if card.cost in [0,1,2] else \
+                        ((self.targetMid - self.mid) * self.left / 10 if card.cost in [3,4,5] else \
+                        (self.targetHigh - self.high) * self.left / 10 )), 0)
+
+    self.cards.sort(key=lambda card: card.draftValue, reverse=True)
+
+    debug(self.cards)
 
     res = self.cards[0]
     if res.cost < 3: self.low += 1
     elif res.cost < 6: self.mid += 1
     else: self.high += 1
+
+    self.left -= 1
 
     return res.place
 
