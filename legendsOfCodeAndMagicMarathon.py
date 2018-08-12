@@ -35,10 +35,10 @@ class Player:
 
 
   def action(self):
-    self.hand.cards.sort(key=lambda card: card.value)
+    self.hand.cards.sort(key=lambda card: card.value, reverse=True)
 
     self.field.prepare()
-    he.field.prepare()
+    he.field.prepare(True)
 
     actions = ''
 
@@ -116,7 +116,11 @@ class Field(Deck):
   def hit(self, enemy):
     actions = ''
     while self.cards != []:
-      self.cards.sort(key=lambda card: card.killingPower(enemy))
+      self.cards.sort(key=lambda card: card.killingPower(enemy), reverse=True)
+      # nothing with I can continue attack
+      if self.cards[0].killingPower(enemy) == -99:
+        return actions
+
       attacker = self.cards.pop(0)
       if attacker.attack == 0:
         continue
@@ -175,9 +179,11 @@ class Field(Deck):
 
 
   def prepare(self, enemy=False):
-    func = lambda card: card.value if not enemy else \
-           lambda card: card.treat
-    self.cards.sort(key=func)
+    # if not enemy: func = lambda card: card.value
+    # else:         func = lambda card: card.threat
+
+    if not enemy: self.cards.sort(key=lambda card: card.value, reverse=True)
+    else:         self.cards.sort(key=lambda card: card.threat, reverse=True)
 
     self.offense = 0
     self.defense = 0
@@ -238,7 +244,7 @@ class Card:
                  + (self.defense + 1 + (4 if self.G else 0)) / (self.cost + 1) \
                  + sum([2 for x in abilities if x in ['L', 'W']]) / 2
 
-      self.treat = self.attack + (self.attack - self.defense) + sum([2 for x in abilities if x in ['B', 'D']]) + (10 if self.L else 0)
+      self.threat = self.attack + (self.attack - self.defense) + sum([2 for x in abilities if x in ['B', 'D']]) + (10 if self.L else 0)
 
       # self.attack * (2 if 'B' in attributes else 1) - self.cost \
       #            + self.defense - self.cost \
@@ -263,7 +269,14 @@ class Card:
       return 99
 
     if enemy.W:
+      if self.L: return -99
       return -self.attack - self.defense
+
+    if enemy.L and self.attack < enemy.defense:
+      return -99
+
+    if self.G and self.attack < enemy.defense:
+      return -99
 
     if enemy.L:
       return -math.pow(self.attack - enemy.defense, 2)
@@ -282,12 +295,22 @@ class Card:
 
     enemy.defense -= self.attack
 
+  def __repr__(self):
+    return "%s: %s/%s %s w%s t%s" % (self.id, self.attack, self.defense, self.abilities, self.value, self.threat)
+
 
 
 
 class Draft:
   def __init__(self):
     self.cards = []
+    self.low  = 0
+    self.mid  = 0
+    self.high = 0
+
+    self.targetLow  = 9
+    self.targetMid  = 11
+    self.targetHigh = 10
 
   def parse(self):
     for i in range(3):
@@ -296,8 +319,17 @@ class Draft:
       self.cards.append(card)
 
   def choose(self):
-    self.cards.sort(key=lambda card: card.value)
-    return self.cards[0].place
+    self.cards.sort(key=lambda card: card.value + \
+                    (self.targetLow - self.low if card.cost in [0,1,2] else \
+                    (self.targetMid - self.mid if card.cost in [3,4,5] else \
+                     self.targetHigh - self.high )), reverse=True)
+
+    res = self.cards[0]
+    if res.cost < 3: self.low += 1
+    elif res.cost < 6: self.mid += 1
+    else: self.high += 1
+
+    return res.place
 
   def clean(self):
     self.cards = []
