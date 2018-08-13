@@ -43,6 +43,7 @@ class Player:
     actions = ''
 
     actions += self.hand.getActions()
+    # kill everyone if I can (if that is valuable)
     actions += self.field.cleanBoard()
     actions += self.field.attackPlayer()
 
@@ -152,7 +153,9 @@ class Field(Deck):
       for g in guards:
         actions += self.hit(g)
 
-    if self.offense >= he.health or he.field.cards == []:
+    meTurnsToKill = he.health / self.offense if self.offense > 0 else 99
+    heTurnsToKill = me.health / he.field.offense if he.field.offense > 0 else 99
+    if meTurnsToKill < heTurnsToKill:
       return actions
 
     targets = iter(he.field.cards)
