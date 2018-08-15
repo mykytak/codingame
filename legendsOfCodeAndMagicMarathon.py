@@ -1,8 +1,7 @@
 import sys
 import math
 
-# Auto-generated code below aims at helping you parse
-# the standard input according to the problem statement.
+
 
 def debug(msg):
   print(msg, file=sys.stderr)
@@ -35,7 +34,7 @@ class Player:
 
 
   def action(self):
-    self.hand.cards.sort(key=lambda card: card.value, reverse=True)
+    self.hand.cards.sort(key=lambda card: card.value)
 
     self.field.prepare()
     he.field.prepare(True)
@@ -43,7 +42,12 @@ class Player:
     actions = ''
 
     actions += self.hand.getActions()
-    # kill everyone if I can (if that is valuable)
+    actions += self.field.forSureKills()
+    actions += self.field.cleanBoard()
+    actions += self.field.attackPlayer()
+
+    actions += self.hand.getActions()
+    actions += self.field.forSureKills()
     actions += self.field.cleanBoard()
     actions += self.field.attackPlayer()
 
@@ -64,48 +68,12 @@ class Deck:
 
 
   def remove(self, card):
-    for c, i in enumerate(self.cards):
+    for i, c in enumerate(self.cards):
       if c.id == card.id:
         del self.cards[i]
         return True
 
     return False
-
-
-
-class Hand(Deck):
-  def getActions(self):
-    mana = me.mana
-    actions = ''
-
-
-    for card in self.cards:
-
-      if card.cost <= mana:
-        if card.type == Const.CREATURE:
-          actions += 'SUMMON ' + str(card.id) + '; '
-
-          if 'C' in card.abilities:
-            me.field.add(card)
-
-          mana -= card.cost
-
-        elif card.type == Const.GREEN:
-          if me.field.cards == []:
-            continue
-
-          actions += 'USE %s %s;' % (card.id, me.field.cards[0].id)
-
-        elif card.type == Const.RED:
-          if he.field.cards == []:
-            continue
-
-          actions += 'USE %s %s;' % (card.id, he.field.cards[0].id)
-
-        elif card.type == Const.BLUE:
-          actions += 'USE %s %s;' % (card.id, '-1')
-
-    return actions
 
 
 
@@ -123,8 +91,6 @@ class Field(Deck):
         return actions
 
       attacker = self.cards.pop(0)
-      if attacker.attack == 0:
-        continue
       actions += 'ATTACK %s %s; ' % (attacker.id, enemy.id)
       attacker.hit(enemy)
       self.offense -= attacker.attack
@@ -137,9 +103,32 @@ class Field(Deck):
 
     return actions
 
-    # if enemy.defense <= 0:
-    #   he.field.cards.remove(enemy)
-    #   he.field.offense -= enemy.attack
+
+  def forSureKills(self):
+    actions = ''
+
+    guards = [card for card in he.field.cards if card.G]
+    guardsTotal = len(guards)
+
+    for enemy in guards:
+      for card in self.cards:
+        if card.killingPower(enemy) == 0:
+          actions += 'ATTACK %s %s;' % (card.id, enemy.id)
+          self.remove(card)
+          he.field.remove(enemy)
+          guardsTotal -= 1
+
+    if guardsTotal != 0:
+      return actions
+
+    for card in self.cards:
+      for enemy in he.field.cards:
+        if card.killingPower(enemy) == 0:
+          actions += 'ATTACK %s %s;' % (card.id, enemy.id)
+          self.remove(card)
+          he.field.remove(enemy)
+
+    return actions
 
 
   def cleanBoard(self):
@@ -153,13 +142,17 @@ class Field(Deck):
       for g in guards:
         actions += self.hit(g)
 
-    meTurnsToKill = he.health / self.offense if self.offense > 0 else 99
-    heTurnsToKill = me.health / he.field.offense if he.field.offense > 0 else 99
-    if meTurnsToKill < heTurnsToKill:
+    if he.field.cards == []:
       return actions
 
+    # disabled till 'guaranteed kills' function will be implemented
+    # meTurnsToKill = he.health / self.offense if self.offense > 0 else 99
+    # heTurnsToKill = me.health / he.field.offense if he.field.offense > 0 else 99
+    # if meTurnsToKill < heTurnsToKill:
+    #   return actions
+
     targets = iter(he.field.cards)
-    while self.offense <= he.field.offense or he.field.cards != []:
+    while he.field.cards != [] or self.cards != []:
       try:
         target = next(targets)
       except StopIteration:
@@ -182,89 +175,89 @@ class Field(Deck):
 
 
   def prepare(self, enemy=False):
-    # if not enemy: func = lambda card: card.value
-    # else:         func = lambda card: card.threat
-
-    if not enemy: self.cards.sort(key=lambda card: card.value, reverse=True)
+    if not enemy: self.cards.sort(key=lambda card: card.value,  reverse=True)
     else:         self.cards.sort(key=lambda card: card.threat, reverse=True)
 
-    self.offense = 0
-    self.defense = 0
-
-    for card in self.cards:
-      self.offense += card.attack
-      self.defense += card.defense
-
+    self.offense = sum([card.attack  for card in self.cards])
+    self.defense = sum([card.defense for card in self.cards])
 
 
 
 class Card:
-  def __init__(self):
+  @classmethod
+  def parse(cls):
     card_number, instance_id, location, card_type, cost, attack, defense, abilities, my_health_change, opponent_health_change, card_draw = input().split()
 
-    self.cardClass = int(card_number)
-    self.id = int(instance_id)
-    self.location = int(location)
-    self.type = int(card_type)
-    self.cost = int(cost)
-    self.attack = int(attack)
-    self.defense = int(defense)
-    self.abilities = abilities
+    args = {
+      'cardClass':  int(card_number),
+      'id':         int(instance_id),
+      'location':   int(location),
+      'type':       int(card_type),
+      'cost':       int(cost),
+      'attack':     int(attack),
+      'defense':    int(defense),
+      'abilities':  abilities
+    }
 
-    self.B = 'B' in abilities
-    self.C = 'C' in abilities
-    self.G = 'G' in abilities
-    self.D = 'D' in abilities
-    self.L = 'L' in abilities
-    self.W = 'W' in abilities
+    if args['type'] == Const.CREATURE: return Creature(args)
+    elif args['type'] == Const.GREEN:  return ItemGreen(args)
+    elif args['type'] == Const.RED:    return ItemRed(args)
+    elif args['type'] == Const.BLUE:   return ItemBlue(args)
+    else: raise Exception('Card type not found')
 
-    self.myHealthChange = int(my_health_change)
-    self.opponentHealthChange = int(opponent_health_change)
-    self.draw = int(card_draw)
+
+  def __init__(self, args = []):
+    for key in args:
+      setattr(self, key, args[key])
+
+    self.B = 'B' in self.abilities
+    self.C = 'C' in self.abilities
+    self.G = 'G' in self.abilities
+    self.D = 'D' in self.abilities
+    self.L = 'L' in self.abilities
+    self.W = 'W' in self.abilities
 
     self.draftValue = 0
     self.threat = 0
 
-    """
-
-    B, C, D - attack
-    G - defense
-    L - oposite attack
-    W - oposite defense
-
-    1/1 for 1
-
-    base = a/cost + d/cost
-
-    a + 2 for modifiers
-    d + 2 for modifiers
-
-      a/d - cost
-    + d * 2 if G
-
-    """
+    self.value = (self.attack + self.defense) / max(self.cost, 0.5)
 
 
-    if self.type == Const.CREATURE:
-      self.value = (self.attack + 1 + sum([2 for x in abilities if x in ['B','C','D']])) / (self.cost + 1) \
-                 + (self.defense + 1 + (4 if self.G else 0)) / (self.cost + 1) \
-                 + sum([2 for x in abilities if x in ['L', 'W']]) / 2
-
-      self.threat = self.attack + (self.attack - self.defense) + sum([2 for x in abilities if x in ['B', 'D']]) + (10 if self.L else 0)
-
-      # self.attack * (2 if 'B' in attributes else 1) - self.cost \
-      #            + self.defense - self.cost \
-    else:
-      self.value = (self.attack + self.defense - self.cost * 2)
+  def __repr__(self):
+    return "%s: %s/%s %s v%.3f t%s; dw:%.3f\n" % (self.id, self.attack, self.defense, self.abilities, self.value, self.threat, self.draftValue)
 
 
-    # if self.type == Const.CREATURE:
-    #   self.value +=  (1 if 'B' in abilities else 0) \
-    #                + (1 if 'C' in abilities else 0) \
-    #                + (1 if 'G' in abilities else 0) \
-    #                + (1 if 'D' in abilities else 0) \
-    #                + (1 if 'L' in abilities else 0) \
-    #                + (1 if 'W' in abilities else 0)
+
+class Creature(Card):
+  def __init__(self, args):
+    super().__init__(args)
+
+    self.value = (self.attack + self.defense) / max(self.cost, 0.5)
+
+    if self.B: self.value += 2 / max(self.cost, 0.5)
+    if self.C: self.value += 2 / max(self.cost, 0.5)
+    if self.D: self.value += 2 / max(self.cost, 0.5)
+
+    if self.G: self.value += 6 / max(self.cost, 0.5)
+
+    if self.L: self.value += 2 / max(self.cost, 0.5)
+    if self.W: self.value += 2 / max(self.cost, 0.5)
+
+
+    self.threat = self.attack + (self.attack - self.defense) + sum([2 for x in self.abilities if x in ['B', 'D']]) + (10 if self.L else 0)
+
+
+  # used only while in hand right now
+  def action(self):
+    if self.cost > me.mana:
+      return None
+
+    if self.C:
+      me.field.add(self)
+
+    me.mana -= self.cost
+
+    return 'SUMMON %s' % (self.id)
 
 
   def killingPower(self, enemy):
@@ -285,9 +278,10 @@ class Card:
       return -99
 
     if enemy.L:
-      return -math.pow(self.attack - enemy.defense, 2)
+      return -math.pow(self.attack - enemy.defense, 2) - self.defense
 
-    return -math.pow(self.attack - enemy.defense, 2)
+    # + min because min always will be negative
+    return -math.pow(self.attack - enemy.defense, 2) + min(0, self.defense - enemy.attack) * (enemy.attack - self.attack)
 
 
   def hit(self, enemy):
@@ -301,8 +295,38 @@ class Card:
 
     enemy.defense -= self.attack
 
-  def __repr__(self):
-    return "%s: %s/%s %s v%.3f t%s; dw:%.3f\n" % (self.id, self.attack, self.defense, self.abilities, self.value, self.threat, self.draftValue)
+
+
+
+class ItemGreen(Card):
+  def action(self):
+    if me.field.cards == []:
+      return None
+
+    return 'USE %s %s;' % (self.id, me.field.cards[0].id)
+
+
+
+class ItemRed(Card):
+  def action(self):
+    if he.field.cards == []:
+      return None
+
+    return 'USE %s %s;' % (self.id, he.field.cards[0].id)
+
+
+
+class ItemBlue(Card):
+  def action(self):
+    return 'USE %s %s;' % (self.id, '-1')
+
+
+
+
+class Hand(Deck):
+  def getActions(self):
+    actions = "; ".join(filter(None, [card.action() for card in self.cards])) + "; "
+    return actions
 
 
 
@@ -316,27 +340,30 @@ class Draft:
 
     self.left = 30
 
-    self.targetLow  = 3
-    self.targetMid  = 1
-    self.targetHigh = 6
+    self.targetLow  = 5
+    self.targetMid  = 0
+    self.targetHigh = 3
+
 
   def parse(self):
     self.cards = []
     for i in range(3):
-      card = Card()
+      card = Card.parse()
       card.place = i
       self.cards.append(card)
 
+
   def choose(self):
     for card in self.cards:
+      # last line: the more powerful card, the less attack/defense to cost matter
       card.draftValue = card.value + \
                         max(((self.targetLow - self.low) * self.left / 10 if card.cost in [0,1,2] else \
-                        ((self.targetMid - self.mid) * self.left / 10 if card.cost in [3,4,5] else \
+                        ((self.targetMid - self.mid) * self.left / 10 if card.cost in [3,4,5,6] else \
                         (self.targetHigh - self.high) * self.left / 10 )), 0)
+                        # + card.cost * 0.5 * card.value
+                        # + math.pow(card.cost - 6, 2) * 0.2 * card.value * 0.1
 
     self.cards.sort(key=lambda card: card.draftValue, reverse=True)
-
-    debug(self.cards)
 
     res = self.cards[0]
     if res.cost < 3: self.low += 1
@@ -346,6 +373,7 @@ class Draft:
     self.left -= 1
 
     return res.place
+
 
   def clean(self):
     self.cards = []
@@ -363,15 +391,13 @@ draftTurns = 30
 # game loop
 while True:
 
-  stage = 'battle' if draftTurns == 0 else 'draft'
-
   me.parseInput()
   he.parseInput()
 
   opponent_hand = int(input())
   card_count = int(input())
 
-  if stage == 'draft':
+  if draftTurns > 0:
     draft.parse()
     print("PICK %s" % (draft.choose()))
     draftTurns -= 1
@@ -379,7 +405,7 @@ while True:
 
 
   for i in range(card_count):
-    card = Card()
+    card = Card.parse()
 
     if card.location == 0:
       me.hand.add(card)
@@ -389,16 +415,5 @@ while True:
       he.field.add(card)
 
 
-    # Write an action using print
-    # To debug: print("Debug messages...", file=sys.stderr)
-
-
-
-  if stage == 'battle':
-    print(me.action())
-    # battle
-    continue
-
-  # just in case
-  print("PASS")
+  print(me.action())
 
