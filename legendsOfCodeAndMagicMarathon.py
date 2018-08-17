@@ -36,18 +36,13 @@ class Player:
   def action(self):
     self.hand.cards.sort(key=lambda card: card.value)
 
+    actions = ''
+    actions += self.hand.getActions()
+
     self.field.prepare()
     he.field.prepare(True)
 
-    actions = ''
-
-    actions += self.hand.getActions()
-    actions += self.field.forSureKills()
-    actions += self.field.cleanBoard()
-    actions += self.field.attackPlayer()
-
-    actions += self.hand.getActions()
-    actions += self.field.forSureKills()
+    actions += self.field.valuableKills()
     actions += self.field.cleanBoard()
     actions += self.field.attackPlayer()
 
@@ -80,17 +75,19 @@ class Deck:
 class Field(Deck):
   def refresh(self):
     self.cards = []
+    self.active = []
 
 
   def hit(self, enemy):
     actions = ''
-    while self.cards != []:
-      self.cards.sort(key=lambda card: card.killingPower(enemy), reverse=True)
+    while self.active != []:
+      self.active.sort(key=lambda card: card.killingPower(enemy), reverse=True)
+
       # nothing with I can continue attack
-      if self.cards[0].killingPower(enemy) == -99:
+      if self.active[0].killingPower(enemy) == -99:
         return actions
 
-      attacker = self.cards.pop(0)
+      attacker = self.active.pop(0)
       actions += 'ATTACK %s %s; ' % (attacker.id, enemy.id)
       attacker.hit(enemy)
       self.offense -= attacker.attack
@@ -104,24 +101,26 @@ class Field(Deck):
     return actions
 
 
-  def forSureKills(self):
+  def valuableKills(self):
     actions = ''
 
     guards = [card for card in he.field.cards if card.G]
     guardsTotal = len(guards)
 
     for enemy in guards:
-      for card in self.cards:
-        if card.killingPower(enemy) == 0:
-          actions += 'ATTACK %s %s;' % (card.id, enemy.id)
-          self.remove(card)
-          he.field.remove(enemy)
-          guardsTotal -= 1
+      for card in self.active:
+        if card.killingPower(enemy) < 0: continue
+        if not card.W and enemy.attack >= card.defense and card.value > enemy.value: continue
+
+        actions += 'ATTACK %s %s;' % (card.id, enemy.id)
+        self.remove(card)
+        he.field.remove(enemy)
+        guardsTotal -= 1
 
     if guardsTotal != 0:
       return actions
 
-    for card in self.cards:
+    for card in self.active:
       for enemy in he.field.cards:
         if card.killingPower(enemy) == 0:
           actions += 'ATTACK %s %s;' % (card.id, enemy.id)
@@ -135,9 +134,6 @@ class Field(Deck):
     actions = ''
     guards = [c for c in he.field.cards if 'G' in c.abilities]
 
-    if guards == [] and self.offense > he.field.defense:
-      return actions
-
     if guards != []:
       for g in guards:
         actions += self.hit(g)
@@ -145,14 +141,13 @@ class Field(Deck):
     if he.field.cards == []:
       return actions
 
-    # disabled till 'guaranteed kills' function will be implemented
-    # meTurnsToKill = he.health / self.offense if self.offense > 0 else 99
-    # heTurnsToKill = me.health / he.field.offense if he.field.offense > 0 else 99
-    # if meTurnsToKill < heTurnsToKill:
-    #   return actions
+    meTurnsToKill = he.health / self.offense if self.offense > 0 else 99
+    heTurnsToKill = me.health / he.field.offense if he.field.offense > 0 else 99
+    if meTurnsToKill < heTurnsToKill:
+      return actions
 
     targets = iter(he.field.cards)
-    while he.field.cards != [] or self.cards != []:
+    while he.field.cards != [] or self.active != []:
       try:
         target = next(targets)
       except StopIteration:
@@ -165,7 +160,7 @@ class Field(Deck):
   def attackPlayer(self):
     res = ''
 
-    for card in self.cards:
+    for card in self.active:
       if card.attack == 0:
         continue
 
@@ -175,8 +170,10 @@ class Field(Deck):
 
 
   def prepare(self, enemy=False):
-    if not enemy: self.cards.sort(key=lambda card: card.value,  reverse=True)
-    else:         self.cards.sort(key=lambda card: card.threat, reverse=True)
+    self.active = [card for card in self.cards if card.active]
+
+    if not enemy: self.active.sort(key=lambda card: card.value,  reverse=True)
+    else:         self.active.sort(key=lambda card: card.threat, reverse=True)
 
     self.offense = sum([card.attack  for card in self.cards])
     self.defense = sum([card.defense for card in self.cards])
@@ -199,16 +196,18 @@ class Card:
       'abilities':  abilities
     }
 
-    if args['type'] == Const.CREATURE: return Creature(args)
-    elif args['type'] == Const.GREEN:  return ItemGreen(args)
-    elif args['type'] == Const.RED:    return ItemRed(args)
-    elif args['type'] == Const.BLUE:   return ItemBlue(args)
+    if   args['type'] == Const.CREATURE: return Creature(args)
+    elif args['type'] == Const.GREEN:    return ItemGreen(args)
+    elif args['type'] == Const.RED:      return ItemRed(args)
+    elif args['type'] == Const.BLUE:     return ItemBlue(args)
     else: raise Exception('Card type not found')
 
 
   def __init__(self, args = []):
     for key in args:
       setattr(self, key, args[key])
+
+    self.active = True
 
     self.B = 'B' in self.abilities
     self.C = 'C' in self.abilities
@@ -221,6 +220,10 @@ class Card:
     self.threat = 0
 
     self.value = (self.attack + self.defense) / max(self.cost, 0.5)
+
+    if   self.location == 0:  me.hand.add(self)
+    elif self.location == 1:  me.field.add(self)
+    else:                     he.field.add(self)
 
 
   def __repr__(self):
@@ -244,16 +247,20 @@ class Creature(Card):
     if self.W: self.value += 2 / max(self.cost, 0.5)
 
 
-    self.threat = self.attack + (self.attack - self.defense) + sum([2 for x in self.abilities if x in ['B', 'D']]) + (10 if self.L else 0)
+    self.threat = self.attack + (self.attack - self.defense) \
+                + sum([2 for x in self.abilities if x in ['B', 'D']]) \
+                + (10 if self.L else 0)
 
 
   # used only while in hand right now
-  def action(self):
+  def playFromHand(self):
     if self.cost > me.mana:
       return None
 
-    if self.C:
-      me.field.add(self)
+    if not self.C:
+      self.active = False
+
+    me.field.add(self)
 
     me.mana -= self.cost
 
@@ -299,7 +306,7 @@ class Creature(Card):
 
 
 class ItemGreen(Card):
-  def action(self):
+  def playFromHand(self):
     if me.field.cards == []:
       return None
 
@@ -308,7 +315,7 @@ class ItemGreen(Card):
 
 
 class ItemRed(Card):
-  def action(self):
+  def playFromHand(self):
     if he.field.cards == []:
       return None
 
@@ -317,7 +324,7 @@ class ItemRed(Card):
 
 
 class ItemBlue(Card):
-  def action(self):
+  def playFromHand(self):
     return 'USE %s %s;' % (self.id, '-1')
 
 
@@ -325,7 +332,7 @@ class ItemBlue(Card):
 
 class Hand(Deck):
   def getActions(self):
-    actions = "; ".join(filter(None, [card.action() for card in self.cards])) + "; "
+    actions = "; ".join(filter(None, [card.playFromHand() for card in self.cards])) + "; "
     return actions
 
 
@@ -340,9 +347,9 @@ class Draft:
 
     self.left = 30
 
-    self.targetLow  = 5
-    self.targetMid  = 0
-    self.targetHigh = 3
+    self.targetLow  = 3
+    self.targetMid  = 2
+    self.targetHigh = 2
 
 
   def parse(self):
@@ -407,12 +414,6 @@ while True:
   for i in range(card_count):
     card = Card.parse()
 
-    if card.location == 0:
-      me.hand.add(card)
-    elif card.location == 1:
-      me.field.add(card)
-    else:
-      he.field.add(card)
 
 
   print(me.action())
